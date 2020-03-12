@@ -211,6 +211,14 @@ deb-chroot sed -Ei "s|/mnt/?|/|" /etc/zfs/zfs-list.cache/rpool
 deb-chroot zfs snapshot bpool/BOOT/debian@install
 deb-chroot zfs snapshot rpool/ROOT/debian@install
 
+PASS_SET=false
+while ! $PASS_SET; do
+    deb-chroot passwd
+    if [[ $? == 0 ]]; then
+       PASS_SET=true
+    fi
+done
+
 cat /mnt/etc/zfs/zfs-list.cache/rpool
 
 killall zed
