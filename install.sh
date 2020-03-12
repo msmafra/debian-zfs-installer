@@ -5,6 +5,16 @@ set -o errexit -o errtrace
 
 export LANG=C
 
+if [[ $EUID -ne 0 ]]; then
+   echo "Must run the zfs installer as root"
+   exit 1
+fi
+
+function check_internet() {
+    ping -c 1 debian.org &> /dev/null || return 1
+    return 0
+}
+
 function deb-chroot() {
  chroot /mnt /usr/bin/env DISK=$DISK $@
 }
@@ -12,6 +22,10 @@ function deb-chroot() {
 function background() {
     chroot /mnt /bin/bash -cl builtin coproc $@
 }
+
+if ! check_internet; then
+   echo "Please connec to the internet before running."
+fi
 
 if [ -z $DISK ]; then
    echo "Please export DISK first"
@@ -164,11 +178,10 @@ deb-chroot apt update
 deb-chroot apt install --yes locales
 deb-chroot dpkg-reconfigure locales
 deb-chroot dpkg-reconfigure tzdata
-deb-chroot apt install --yes dpkg-dev linux-headers-amd64 linux-image-amd64 console-setup
+deb-chroot apt install --yes dpkg-dev linux-headers-amd64 linux-image-amd64 console-setup psmisc
 deb-chroot apt install --yes zfs-initramfs
 
 deb-chroot apt install --yes grub-pc
-deb-chroot passwd
 deb-chroot systemctl enable zfs-import-bpool.service
 deb-chroot cp /usr/share/systemd/tmp.mount /etc/systemd/system/
 deb-chroot systemctl enable tmp.mount
@@ -184,16 +197,23 @@ echo bpool/BOOT/debian /boot zfs \
 deb-chroot mkdir /etc/zfs/zfs-list.cache
 deb-chroot touch /etc/zfs/zfs-list.cache/rpool
 deb-chroot ln -s /usr/lib/zfs-linux/zed.d/history_event-zfs-list-cacher.sh /etc/zfs/zed.d
-background zed -F
+deb-chroot zed
 
-if test -s /mnt/etc/zfs/zfs-list.cache/rpool; then
-   deb-chroot sed -Ei "s|/mnt/?|/|" /etc/zfs/zfs-list.cache/rpool
-else
-    killall zed; sleep 1; killall zed; sleep 1
+while ! test -s /mnt/etc/zfs/zfs-list.cache/rpool; do
+    deb-chroot killall zed
+    sleep 1
     deb-chroot zfs set canmount=noauto rpool/ROOT/debian
-    background zed -F
-    deb-chroot sed -Ei "s|/mnt/?|/|" /etc/zfs/zfs-list.cache/rpool
-fi
+    deb-chroot zed
+done
+
+deb-chroot sed -Ei "s|/mnt/?|/|" /etc/zfs/zfs-list.cache/rpool
 
 deb-chroot zfs snapshot bpool/BOOT/debian@install
 deb-chroot zfs snapshot rpool/ROOT/debian@install
+
+cat /mnt/etc/zfs/zfs-list.cache/rpool
+
+umount -R /mnt
+zfs -a umount
+zpool export rpool
+zpool export bpool
