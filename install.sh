@@ -213,7 +213,8 @@ deb-chroot zfs snapshot rpool/ROOT/debian@install
 
 cat /mnt/etc/zfs/zfs-list.cache/rpool
 
-umount -R /mnt
-zfs -a umount
+killall zed
+umount -Rlf /mnt
+zfs umount -a
 zpool export rpool
 zpool export bpool
